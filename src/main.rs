@@ -1,10 +1,12 @@
 use std::sync::{Arc, Mutex};
 
 use actix_web::{middleware::Logger, web::scope, App, HttpServer};
+use config::Config;
 use redis::{Client, Connection, RedisResult};
 use routes::features;
 
-pub mod routes {
+mod config;
+mod routes {
     pub mod features;
 }
 
@@ -32,11 +34,12 @@ impl Backend {
 
 #[actix_web::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let host = String::from("localhost");
-    let port: u16 = 8080;
+    let config = Config::parse().expect(
+        "No configuration file found. Please create a 'config.toml' file in the root folder.",
+    );
     let backend = Backend::new("redis".to_string())?;
 
-    println!("Starting server on {}:{}...", host, port);
+    println!("Starting server on {}:{}...", config.host, config.port);
 
     HttpServer::new(move || {
         App::new()
@@ -45,10 +48,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .service(
                 scope("/features")
                     .service(features::set_toggle)
-                    .service(features::is_toggled),
+                    .service(features::is_toggled)
+                    .service(features::remove_toggle),
             )
     })
-    .bind(format!("{}:{}", host, port))?
+    .bind(format!("{}:{}", config.host, config.port))?
     .run()
     .await?;
 
