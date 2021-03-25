@@ -10,7 +10,6 @@ use serde::Deserialize;
 pub struct Config {
     pub host: String,
     pub port: u64,
-    pub features: Vec<KV>,
 }
 
 impl Config {

@@ -1,14 +1,18 @@
+use actix_multipart::Multipart;
 use actix_web::{
     delete, get, post,
-    web::{Data, Json, Path},
-    HttpResponse,
+    web::{Buf, Data, Json, Path},
+    Error, HttpResponse,
 };
-use redis::Commands;
+use futures::{StreamExt, TryStreamExt};
+use redis::{Commands, Connection};
 use serde::{Deserialize, Serialize};
+use serde_json::from_slice;
+use std::collections::HashMap;
 
 use crate::Backend;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct KV {
     pub key: String,
     pub val: bool,
@@ -31,7 +35,7 @@ pub async fn is_toggled(Path(feature): Path<String>, data: Data<Backend>) -> Htt
     }
 }
 
-#[post("/")]
+#[post("")]
 pub async fn set_toggle(payload: Json<KV>, data: Data<Backend>) -> HttpResponse {
     let conn = data.conn.clone();
     let conn = &mut conn.lock().unwrap();
@@ -47,4 +51,32 @@ pub async fn remove_toggle(Path(feature): Path<String>, data: Data<Backend>) -> 
     let _: () = conn.del(&feature).unwrap();
 
     HttpResponse::Ok().finish()
+}
+
+#[post("/import")]
+pub async fn import_toggles(
+    mut payload: Multipart,
+    data: Data<Backend>,
+) -> Result<HttpResponse, Error> {
+    let mut buf: Vec<u8> = Vec::new();
+
+    while let Some(mut field) = payload.try_next().await? {
+        while let Some(chunk) = field.next().await {
+            buf.extend_from_slice(chunk?.bytes());
+        }
+    }
+
+    for (key, val) in from_slice::<HashMap<String, bool>>(&mut buf)? {
+        if with_connection(&data, |conn| conn.set::<String, bool, ()>(key.clone(), val)).is_err() {
+            return Ok(HttpResponse::BadRequest().body(format!("Unable to set ({}, {})", key, val)));
+        }
+    }
+
+    Ok(HttpResponse::Created().finish())
+}
+
+fn with_connection<R, F: FnOnce(&mut Connection) -> R>(data: &Data<Backend>, f: F) -> R {
+    let conn = data.conn.clone();
+    let conn = &mut conn.lock().unwrap();
+    f(conn)
 }

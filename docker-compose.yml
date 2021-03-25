@@ -1,0 +1,11 @@
+version: "3.8"
+
+services:
+  switcharoo:
+    build: .
+    ports:
+      - 8080:8080
+  redis:
+    image: redis:6.2.1-alpine3.13
+    ports:
+      - 6379:6379

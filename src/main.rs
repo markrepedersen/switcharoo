@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use actix_web::{middleware::Logger, web::scope, App, HttpServer};
 use config::Config;
+use env_logger::Env;
 use redis::{Client, Connection, RedisResult};
 use routes::features;
 
@@ -39,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let backend = Backend::new("redis".to_string())?;
 
-    println!("Starting server on {}:{}...", config.host, config.port);
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
     HttpServer::new(move || {
         App::new()
@@ -49,7 +50,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 scope("/features")
                     .service(features::set_toggle)
                     .service(features::is_toggled)
-                    .service(features::remove_toggle),
+                    .service(features::remove_toggle)
+                    .service(features::import_toggles),
             )
     })
     .bind(format!("{}:{}", config.host, config.port))?
