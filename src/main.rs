@@ -6,6 +6,9 @@ use env_logger::Env;
 use redis::{Client, Connection, RedisResult};
 use routes::features;
 
+mod backends {
+    pub mod redis;
+}
 mod config;
 mod routes {
     pub mod features;
