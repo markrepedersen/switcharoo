@@ -26,27 +26,35 @@ impl KV {
 
 #[get("/{feature}")]
 pub async fn is_toggled(Path(feature): Path<String>, data: Data<Backend>) -> HttpResponse {
-    with_connection(data, |conn: &mut Connection| {
+    with_connection(&data, |conn: &mut Connection| {
         match conn.get(&feature).unwrap() {
             Some(val) => HttpResponse::Ok().json(KV::new(feature, val)),
             None => HttpResponse::NotFound().json(format!("Key {} wasn't found.", feature)),
-        };
-    })
-}
-
-#[post("")]
-pub async fn set_toggle(payload: Json<KV>, data: Data<Backend>) -> HttpResponse {
-    with_connection(data, |conn: &mut Connection| {
-        conn.set(payload.key.clone(), payload.val).unwrap();
-        HttpResponse::Ok().finish()
+        }
     })
 }
 
 #[delete("/{feature}")]
 pub async fn remove_toggle(Path(feature): Path<String>, data: Data<Backend>) -> HttpResponse {
-    with_connection(data, |conn: &mut Connection| {
-        conn.del(&feature).unwrap();
+    with_connection(&data, |conn: &mut Connection| {
+        conn.del::<String, bool>(feature).unwrap();
+        HttpResponse::Ok().finish()
+    })
+}
 
+#[get("")]
+pub async fn all_toggles(data: Data<Backend>) -> HttpResponse {
+    with_connection(&data, |conn: &mut Connection| match conn.scan::<String>() {
+        Ok(vals) => HttpResponse::Ok().json(vals.collect::<Vec<String>>()),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    })
+}
+
+#[post("")]
+pub async fn set_toggle(payload: Json<KV>, data: Data<Backend>) -> HttpResponse {
+    with_connection(&data, |conn: &mut Connection| {
+        conn.set::<String, bool, ()>(payload.key.clone(), payload.val)
+            .unwrap();
         HttpResponse::Ok().finish()
     })
 }
@@ -65,12 +73,13 @@ pub async fn import_toggles(
     }
 
     for (key, val) in from_slice::<HashMap<String, bool>>(&mut buf)? {
-        if with_connection(&data, |conn: &mut Connection| {
+        let result = with_connection(&data, |conn: &mut Connection| {
             conn.set::<String, bool, ()>(key.clone(), val)
-        })
-        .is_err()
-        {
-            return Ok(HttpResponse::BadRequest().body(format!("Unable to set ({}, {})", key, val)));
+        });
+
+        if result.is_err() {
+            return Ok(HttpResponse::InternalServerError()
+                .body(format!("Unable to set ({}, {})", key, val)));
         }
     }
 

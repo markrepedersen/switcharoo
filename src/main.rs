@@ -54,6 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .service(features::set_toggle)
                     .service(features::is_toggled)
                     .service(features::remove_toggle)
+                    .service(features::all_toggles)
                     .service(features::import_toggles),
             )
     })
