@@ -1,7 +1,11 @@
-import React from 'react';
-import ReactDOM from 'react-dom';
+import React from "react";
+import ReactDOM from "react-dom";
+import Form from "./components/Form";
+import Toggle from "./components/Toggle";
 
 ReactDOM.render(
-    <h1>Hi there</h1>,
-    document.getElementById('root')
+  <div className="component-app">
+    <Form />
+  </div>,
+  document.getElementById("root")
 );

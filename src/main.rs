@@ -2,14 +2,14 @@ use std::sync::{Arc, Mutex};
 
 use actix_web::{
     middleware::Logger,
-    web::{scope, to},
-    App, HttpResponse, HttpServer,
+    web::{route, scope},
+    App, HttpServer,
 };
 use config::Config;
 use env_logger::Env;
 use redis::{Client, Connection, RedisResult};
 use routes::features;
-use web::{bundle, index};
+use web::{bundle, error404, index};
 
 mod backends {
     pub mod redis;
@@ -35,7 +35,7 @@ impl Backend {
     */
     pub fn new(connection_str: String, name: String) -> RedisResult<Self> {
         let client = Client::open(connection_str)?;
-	
+
         Ok(Self {
             name,
             conn: Arc::new(Mutex::new(client.get_connection()?)),
@@ -48,26 +48,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::parse().expect(
         "No configuration file found. Please create a 'config.toml' file in the root folder.",
     );
-    // let backend = Backend::new("redis".to_string())?;
+    let backend = Backend::new("redis://localhost".to_string(), "redis".to_string())?;
 
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
     HttpServer::new(move || {
         let app = App::new()
             .wrap(Logger::default())
-            // .data(backend.clone())
-            .default_service(to(|| HttpResponse::NotFound()))
+            .data(backend.clone())
             .service(
-                scope("/features")
-                    .service(features::set_toggle)
-                    .service(features::is_toggled)
-                    .service(features::remove_toggle)
-                    .service(features::all_toggles)
-                    .service(features::import_toggles),
+                scope("/api").service(
+                    scope("/features")
+                        .service(features::set_toggle)
+                        .service(features::is_toggled)
+                        .service(features::remove_toggle)
+                        .service(features::all_toggles)
+                        .service(features::import_toggles),
+                ),
             );
 
         if cfg!(feature = "web") {
-            app.service(scope("/web").service(index).service(bundle))
+            app.default_service(route().to(error404))
+                .service(scope("/web").service(index).service(bundle))
         } else {
             app
         }

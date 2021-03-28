@@ -15,12 +15,12 @@ use crate::{backends::redis::with_connection, Backend};
 #[derive(Serialize, Deserialize, Debug)]
 pub struct KV {
     pub key: String,
-    pub val: bool,
+    pub value: bool,
 }
 
 impl KV {
-    pub fn new(key: String, val: bool) -> Self {
-        Self { key, val }
+    pub fn new(key: String, value: bool) -> Self {
+        Self { key, value }
     }
 }
 
@@ -44,16 +44,32 @@ pub async fn remove_toggle(Path(feature): Path<String>, data: Data<Backend>) -> 
 
 #[get("")]
 pub async fn all_toggles(data: Data<Backend>) -> HttpResponse {
-    with_connection(&data, |conn: &mut Connection| match conn.scan::<String>() {
-        Ok(vals) => HttpResponse::Ok().json(vals.collect::<Vec<String>>()),
-        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    with_connection(&data, |conn: &mut Connection| {
+        let keys: Vec<String> = match conn.scan::<String>() {
+            Ok(keys) => keys.collect(),
+            Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+        };
+        let values: Vec<String> = conn.get(keys.clone()).unwrap();
+
+        if keys.len() != values.len() {
+            HttpResponse::InternalServerError()
+                .body("Unable to retrieve values for all keys; lengths do not match.")
+        } else {
+            let pairs: Vec<KV> = keys
+                .iter()
+                .enumerate()
+                .map(|(i, key)| KV::new(key.clone(), values[i].parse().unwrap_or(false)))
+                .collect();
+
+            HttpResponse::Ok().json(pairs)
+        }
     })
 }
 
 #[post("")]
 pub async fn set_toggle(payload: Json<KV>, data: Data<Backend>) -> HttpResponse {
     with_connection(&data, |conn: &mut Connection| {
-        conn.set::<String, bool, ()>(payload.key.clone(), payload.val)
+        conn.set::<String, bool, ()>(payload.key.clone(), payload.value)
             .unwrap();
         HttpResponse::Ok().finish()
     })
