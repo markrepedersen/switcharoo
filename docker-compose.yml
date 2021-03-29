@@ -7,5 +7,10 @@ services:
       - 8080:8080
   redis:
     image: redis:6.2.1-alpine3.13
+    restart: always
+    volumes:
+       - ./redis/redis.config:/usr/local/etc/redis/redis.conf
     ports:
       - 6379:6379
+    command:
+      - /redis.conf

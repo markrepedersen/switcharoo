@@ -1,8 +1,11 @@
 import React, {Component} from "react";
 import Toggle from "../Toggle";
+import SearchBar from "../SearchBar";
 import axios from "axios";
 
-export default class Form extends Component {
+import "./index.css";
+
+export default class Table extends Component {
   constructor(props) {
     super(props);
     this.state = {data: []};
@@ -13,11 +16,35 @@ export default class Form extends Component {
     this.setState({data: response.data});
   }
 
-  render() {
-    const toggles = this.state.data.map((toggle) => (
-      <Toggle name={toggle.key} start={toggle.value} />
-    ));
+  renderTableData() {
+    return this.state.data.map((toggle, index) => {
+      return (
+        <tr key={index}>
+          <td>{toggle.key}</td>
+          <td>
+            <Toggle small name={toggle.key} start={toggle.value} />
+          </td>
+        </tr>
+      );
+    });
+  }
 
-    return <div>{toggles}</div>;
+  renderTableHeader() {
+    return [<th> Name</th>, <th> Checkbox </th>];
+  }
+
+  render() {
+    return (
+      <div>
+        <h1 id="title">Feature Toggles</h1>
+        <SearchBar />
+        <table id="table">
+          <tbody>
+            <tr>{this.renderTableHeader()}</tr>
+            {this.renderTableData()}
+          </tbody>
+        </table>
+      </div>
+    );
   }
 }
