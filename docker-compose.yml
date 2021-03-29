@@ -9,8 +9,8 @@ services:
     image: redis:6.2.1-alpine3.13
     restart: always
     volumes:
-       - ./redis/redis.config:/usr/local/etc/redis/redis.conf
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:rw
+      - ./redis/users.acl:/usr/local/etc/redis/users.acl:rw
+      - ./redis/data:/data:rw
     ports:
       - 6379:6379
-    command:
-      - /redis.conf

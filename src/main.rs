@@ -11,15 +11,6 @@ use redis::{Client, Connection, RedisResult};
 use routes::features;
 use web::{bundle, error404, index};
 
-mod backends {
-    pub mod redis;
-}
-mod config;
-mod web;
-mod routes {
-    pub mod features;
-}
-
 /**
 The storage backend.
  */
@@ -57,7 +48,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .wrap(Logger::default())
             .data(backend.clone())
             .service(
-                scope("/api").service(
+                scope("/api")
+                .service(
+                    scope("/users")
+                        .service(auth::login)
+                )
+                .service(
                     scope("/features")
                         .service(features::set_toggle)
                         .service(features::is_toggled)
