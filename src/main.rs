@@ -1,15 +1,20 @@
-use std::sync::{Arc, Mutex};
-
-use actix_web::{
-    middleware::Logger,
-    web::{route, scope},
-    App, HttpServer,
+use std::{
+    env,
+    sync::{Arc, Mutex},
 };
+
+use actix_web::{middleware::Logger, web::scope, App, HttpServer};
 use config::Config;
+use dotenv;
 use env_logger::Env;
 use redis::{Client, Connection, RedisResult};
-use routes::features;
-use web::{bundle, error404, index};
+use routes::{auth, features, web};
+use sqlx::PgPool;
+
+mod backends;
+mod config;
+mod models;
+mod routes;
 
 /**
 The storage backend.
@@ -36,39 +41,27 @@ impl Backend {
 
 #[actix_web::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenv::dotenv().ok();
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+
     let config = Config::parse().expect(
         "No configuration file found. Please create a 'config.toml' file in the root folder.",
     );
     let backend = Backend::new("redis://localhost".to_string(), "redis".to_string())?;
-
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL is not set in .env file");
+    let pool = PgPool::new(&database_url).await?;
 
     HttpServer::new(move || {
-        let app = App::new()
+        App::new()
             .wrap(Logger::default())
             .data(backend.clone())
+            .data(pool.clone())
             .service(
                 scope("/api")
-                .service(
-                    scope("/users")
-                        .service(auth::login)
-                )
-                .service(
-                    scope("/features")
-                        .service(features::set_toggle)
-                        .service(features::is_toggled)
-                        .service(features::remove_toggle)
-                        .service(features::all_toggles)
-                        .service(features::import_toggles),
-                ),
-            );
-
-        if cfg!(feature = "web") {
-            app.default_service(route().to(error404))
-                .service(scope("/web").service(index).service(bundle))
-        } else {
-            app
-        }
+                    .configure(auth::init)
+                    .configure(features::init)
+                    .configure(web::init),
+            )
     })
     .bind(format!("{}:{}", config.host, config.port))?
     .run()

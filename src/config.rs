@@ -8,7 +8,7 @@ use serde::Deserialize;
 #[derive(Deserialize)]
 pub struct Config {
     pub host: String,
-    pub port: u64dsfsfd,
+    pub port: u64,
 }
 
 impl Config {

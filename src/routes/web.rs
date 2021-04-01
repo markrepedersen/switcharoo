@@ -1,8 +1,8 @@
 use actix_web::{get, HttpResponse};
 
-const INDEX_HTML_FILE: &'static str = include_str!("../web/dist/index.html");
-const BUNDLE_JS_FILE: &'static str = include_str!("../web/dist/bundle.js");
-const NOT_FOUND_FILE: &'static str = include_str!("../web/dist/not_found.html");
+const INDEX_HTML_FILE: &'static str = include_str!("../../web/dist/index.html");
+const BUNDLE_JS_FILE: &'static str = include_str!("../../web/dist/bundle.js");
+const NOT_FOUND_FILE: &'static str = include_str!("../../web/dist/not_found.html");
 
 #[get("")]
 pub fn index() -> HttpResponse {
@@ -22,4 +22,13 @@ pub fn error404() -> HttpResponse {
     HttpResponse::NotFound()
         .content_type("text/html; charset=utf-8")
         .body(NOT_FOUND_FILE)
+}
+
+pub fn init(cfg: &mut ServiceConfig) {
+    cfg.service(
+        scope("/web")
+            .default_service(route().to(web::error404))
+            .service(web::index)
+            .service(web::bundle),
+    )
 }
