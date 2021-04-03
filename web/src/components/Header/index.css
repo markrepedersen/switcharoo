@@ -1,0 +1,20 @@
+.navbar {
+  background-color: black;
+  height: auto;
+  overflow: auto;
+  width: 100%;
+  position: relative;
+}
+
+.nav-link{
+  font-family: 'Roboto', sans-serif;
+  color: white !important;
+}
+
+.navbar-brand {
+  float: left;
+}
+
+.navbar-nav {
+  float: right;
+}

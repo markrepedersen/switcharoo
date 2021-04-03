@@ -1,24 +1,72 @@
 use anyhow::Result;
-use bcrypt::{hash, verify, DEFAULT_COST};
+use argon2::ThreadMode;
+use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 use sqlx::{query, query_as, FromRow, PgPool};
+use uuid::Uuid;
 
-#[derive(Serialize, Deserialize, FromRow)]
+use crate::routes::auth::UserRequest;
+
+#[derive(Serialize, Deserialize, FromRow, Clone)]
 pub struct User {
-    pub id: i32,
+    pub id: Uuid,
     pub email: String,
-    pub hashpass: String,
+    #[serde(skip_serializing)]
+    pub password: String,
+}
+
+impl From<UserRequest> for User {
+    fn from(user: UserRequest) -> Self {
+        User {
+            id: Uuid::new_v4(),
+            email: user.email,
+            password: user.password,
+        }
+    }
 }
 
 #[allow(dead_code)]
 impl User {
-    pub async fn has_password(user: UserRequest, pool: &PgPool) -> Result<bool> {
-        let db_user = Self::find_by_email(user.email, pool).await?;
+    pub async fn create(user: UserRequest, pool: &PgPool) -> Result<()> {
+        let user = Self::from(user);
 
-        Ok(match verify(&db_user.hashpass, &user.password) {
-            Ok(true) => true,
-            _ => false,
-        })
+        query!(
+            "INSERT INTO Users (id, email, password) VALUES ($1, $2, $3)",
+            user.id,
+            user.email,
+            Self::hash_password(&user.password)?,
+        )
+        .execute(pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn is_signed_in(user: &UserRequest, pool: &PgPool) -> Result<User> {
+        let db_user = User::find_by_email(&user.email, pool).await?;
+
+        db_user.verify_password(&user.password)?;
+
+        Ok(db_user)
+    }
+
+    pub fn hash_password(password: &String) -> Result<String> {
+        let salt: [u8; 32] = thread_rng().gen();
+        let mut config = argon2::Config::default();
+
+        config.lanes = 4;
+        config.thread_mode = ThreadMode::Parallel;
+        config.hash_length = 32;
+
+        let hashpass = argon2::hash_encoded(password.as_bytes(), &salt, &config)?;
+
+        Ok(hashpass)
+    }
+
+    pub fn verify_password(&self, password: &String) -> Result<bool> {
+        let is_valid = argon2::verify_encoded(&self.password, password.as_bytes())?;
+
+        Ok(is_valid)
     }
 
     pub async fn find_all(pool: &PgPool) -> Result<Vec<User>> {
@@ -29,7 +77,7 @@ impl User {
         Ok(users)
     }
 
-    pub async fn find_by_id(id: i32, pool: &PgPool) -> Result<User> {
+    pub async fn find_by_id(id: Uuid, pool: &PgPool) -> Result<User> {
         let user = query_as!(User, "SELECT * FROM Users WHERE id = $1", id)
             .fetch_one(pool)
             .await?;
@@ -37,7 +85,7 @@ impl User {
         Ok(user)
     }
 
-    pub async fn find_by_email(email: String, pool: &PgPool) -> Result<User> {
+    pub async fn find_by_email(email: &String, pool: &PgPool) -> Result<User> {
         let user = query_as!(User, "SELECT * FROM Users WHERE email = $1", email)
             .fetch_one(pool)
             .await?;
@@ -45,27 +93,11 @@ impl User {
         Ok(user)
     }
 
-    pub async fn create(user: UserRequest, pool: &PgPool) -> Result<()> {
-        let hashpass = hash(&user.password, DEFAULT_COST)?;
-
+    pub async fn update(id: Uuid, user: UserRequest, pool: &PgPool) -> Result<()> {
         query!(
-            "INSERT INTO Users (email, hashpass) VALUES ($1, $2)",
+            "UPDATE Users SET email = $1, password = $2 WHERE id = $3",
             user.email,
-            hashpass,
-        )
-        .execute(pool)
-        .await?;
-
-        Ok(())
-    }
-
-    pub async fn update(id: i32, user: UserRequest, pool: &PgPool) -> Result<()> {
-        let hashpass = hash(&user.password, DEFAULT_COST)?;
-
-        query!(
-            "UPDATE Users SET email = $1, hashpass = $2 WHERE id = $3",
-            user.email,
-            hashpass,
+            Self::hash_password(&user.password)?,
             id,
         )
         .execute(pool)
@@ -74,7 +106,7 @@ impl User {
         Ok(())
     }
 
-    pub async fn delete(id: i32, pool: &PgPool) -> Result<()> {
+    pub async fn delete(id: Uuid, pool: &PgPool) -> Result<()> {
         query!("DELETE FROM Users WHERE id = $1", id)
             .execute(pool)
             .await?;

@@ -1,11 +1,12 @@
 import React from "react";
 import ReactDOM from "react-dom";
-import Form from "./components/Form";
-import Toggle from "./components/Toggle";
+import App from "./components/App";
+
+import "../node_modules/bootstrap/dist/css/bootstrap.min.css";
 
 ReactDOM.render(
-  <div className="component-app">
-    <Form />
-  </div>,
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
   document.getElementById("root")
 );

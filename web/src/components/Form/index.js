@@ -13,7 +13,7 @@ export default class Table extends Component {
 
   async componentDidMount() {
     const response = await axios.get("/api/features");
-    this.setState({data: response.data});
+    await this.setState({data: response.data || []});
   }
 
   renderTableData() {
@@ -40,7 +40,7 @@ export default class Table extends Component {
         <SearchBar />
         <table id="table">
           <tbody>
-            <tr>{this.renderTableHeader()}</tr>
+            <tr key="headers">{this.renderTableHeader()}</tr>
             {this.renderTableData()}
           </tbody>
         </table>

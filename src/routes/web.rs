@@ -1,34 +1,25 @@
-use actix_web::{get, HttpResponse};
+use actix_web::{get, web::ServiceConfig, HttpResponse};
 
-const INDEX_HTML_FILE: &'static str = include_str!("../../web/dist/index.html");
-const BUNDLE_JS_FILE: &'static str = include_str!("../../web/dist/bundle.js");
-const NOT_FOUND_FILE: &'static str = include_str!("../../web/dist/not_found.html");
+static INDEX_HTML_FILE: &'static str = include_str!("../../web/dist/index.html");
+static BUNDLE_JS_FILE: &'static str = include_str!("../../web/dist/bundle.js");
 
-#[get("")]
+static HTML_CONTENT_TYPE: &'static str = "text/html; charset=utf-8";
+static JS_CONTENT_TYPE: &'static str = "text/javascript";
+
+#[get("/")]
 pub fn index() -> HttpResponse {
     HttpResponse::Ok()
-        .content_type("text/html; charset=utf-8")
+        .content_type(HTML_CONTENT_TYPE)
         .body(INDEX_HTML_FILE)
 }
 
 #[get("/bundle.js")]
 pub fn bundle() -> HttpResponse {
     HttpResponse::Ok()
-        .content_type("text/javascript")
+        .content_type(JS_CONTENT_TYPE)
         .body(BUNDLE_JS_FILE)
 }
 
-pub fn error404() -> HttpResponse {
-    HttpResponse::NotFound()
-        .content_type("text/html; charset=utf-8")
-        .body(NOT_FOUND_FILE)
-}
-
 pub fn init(cfg: &mut ServiceConfig) {
-    cfg.service(
-        scope("/web")
-            .default_service(route().to(web::error404))
-            .service(web::index)
-            .service(web::bundle),
-    )
+    cfg.service(index).service(bundle);
 }
