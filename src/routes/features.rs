@@ -7,13 +7,15 @@ use actix_web::{
     web::{scope, Buf, Data, Json, Path},
     HttpResponse, Result,
 };
+use actix_web_grants::proc_macro::has_any_role;
+use actix_web_httpauth::middleware::HttpAuthentication;
 use futures::{StreamExt, TryStreamExt};
 use redis::{Commands, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json::from_slice;
 use std::collections::HashMap;
 
-use crate::{backends::redis::with_connection, Backend};
+use crate::{Backend, validate_jwt, backends::redis::with_connection};
 
 type HttpResult = Result<HttpResponse>;
 
@@ -30,6 +32,7 @@ impl KV {
 }
 
 #[get("/{feature}")]
+#[has_any_role("Guest", "Admin", "Developer")]
 pub async fn is_toggled(Path(feature): Path<String>, data: Data<Backend>) -> HttpResult {
     with_connection(&data, |conn: &mut Connection| -> HttpResult {
         let val = conn
@@ -41,6 +44,7 @@ pub async fn is_toggled(Path(feature): Path<String>, data: Data<Backend>) -> Htt
 }
 
 #[delete("/{feature}")]
+#[has_any_role("Admin", "Developer")]
 pub async fn remove_toggle(Path(feature): Path<String>, data: Data<Backend>) -> HttpResult {
     with_connection(&data, |conn: &mut Connection| -> HttpResult {
         conn.del::<String, bool>(feature)
@@ -51,6 +55,7 @@ pub async fn remove_toggle(Path(feature): Path<String>, data: Data<Backend>) -> 
 }
 
 #[get("")]
+#[has_any_role("Guest", "Admin", "Developer")]
 pub async fn all_toggles(data: Data<Backend>) -> HttpResult {
     with_connection(&data, |conn: &mut Connection| -> HttpResult {
         let keys: Vec<String> = conn
@@ -76,6 +81,7 @@ pub async fn all_toggles(data: Data<Backend>) -> HttpResult {
 }
 
 #[post("")]
+#[has_any_role("Developer")]
 pub async fn set_toggle(payload: Json<KV>, data: Data<Backend>) -> HttpResult {
     with_connection(&data, |conn: &mut Connection| -> HttpResult {
         conn.set::<String, bool, ()>(payload.key.clone(), payload.value)
@@ -86,6 +92,7 @@ pub async fn set_toggle(payload: Json<KV>, data: Data<Backend>) -> HttpResult {
 }
 
 #[post("/import")]
+#[has_any_role("Developer")]
 pub async fn import_toggles(mut payload: Multipart, data: Data<Backend>) -> HttpResult {
     let mut buf: Vec<u8> = Vec::new();
 
@@ -111,6 +118,7 @@ pub async fn import_toggles(mut payload: Multipart, data: Data<Backend>) -> Http
 pub fn init(cfg: &mut ServiceConfig) {
     cfg.service(
         scope("/features")
+	    .wrap(HttpAuthentication::bearer(validate_jwt))
             .service(is_toggled)
             .service(all_toggles)
             .service(set_toggle)

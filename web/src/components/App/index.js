@@ -1,29 +1,23 @@
 import React, {Component} from "react";
 import {BrowserRouter, Route, Switch} from "react-router-dom";
-import Form from "../Form";
+import Dashboard from "../Dashboard";
 import Login from "../Login";
 import Header from "../Header";
-import axios from "axios";
 
 export default class App extends Component {
   constructor(props) {
     super(props);
-    this.state = {id: null};
+    this.state = {isLogged: false};
   }
 
   async componentDidMount() {
-    let id = null;
-    try {
-      const response = await axios.get("/api/whoami");
-      id = response.data.id;
-    } catch (e) {
-    } finally {
-      await this.setState({id});
+    if (localStorage.getItem("token")) {
+      this.setState({isLoggedIn: true});
     }
   }
 
   render() {
-    if (!this.state.id) {
+    if (!this.state.isLoggedIn) {
       return <Login />;
     }
 
@@ -33,7 +27,7 @@ export default class App extends Component {
           <Header />
           <Switch>
             <Route path="/">
-              <Form />
+              <Dashboard />
             </Route>
           </Switch>
         </BrowserRouter>

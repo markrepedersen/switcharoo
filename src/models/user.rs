@@ -2,12 +2,12 @@ use anyhow::Result;
 use argon2::ThreadMode;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
-use sqlx::{query, query_as, FromRow, PgPool};
+use sqlx::{query, query_as, PgPool};
 use uuid::Uuid;
 
-use crate::routes::auth::UserRequest;
+use crate::routes::users::UserRequest;
 
-#[derive(Serialize, Deserialize, FromRow, Clone)]
+#[derive(Serialize, Deserialize)]
 pub struct User {
     pub id: Uuid,
     pub email: String,

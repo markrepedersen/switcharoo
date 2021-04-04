@@ -1,21 +1,30 @@
-use actix_redis::RedisSession;
-use actix_web::{middleware::Logger, web::scope, App, HttpServer};
+#![feature(once_cell)]
+
+use actix_files::Files;
+use actix_web::{
+    dev::ServiceRequest, middleware::Logger, web::scope, App, HttpServer, Result as ActixResult,
+};
+use actix_web_grants::permissions::AttachPermissions;
+use actix_web_httpauth::extractors::bearer::BearerAuth;
+use env_logger::Env;
+use sqlx::PgPool;
+use std::{env, path};
+
 use backends::Backend;
 use config::Config;
-use dotenv;
-use env_logger::Env;
-use rand::Rng;
-use routes::{auth, features, web};
-use sqlx::PgPool;
-use std::env;
 
+mod auth;
 mod backends;
 mod config;
 mod models;
 mod routes;
 
-fn gen_key() -> [u8; 32] {
-    rand::thread_rng().gen::<[u8; 32]>()
+pub async fn validate_jwt(req: ServiceRequest, credentials: BearerAuth) -> ActixResult<ServiceRequest> {
+    let claims = auth::claim::decode_jwt(credentials.token())?;
+
+    req.attach(claims.permissions.iter().map(|p| p.to_string()).collect());
+
+    Ok(req)
 }
 
 #[actix_web::main]
@@ -32,29 +41,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("Unable to create database pool.");
 
     let redis_host = env::var("REDIS_HOST").expect("Redis host is not set.");
-    let redis_port = env::var("REDIS_PORT").expect("Redis port is not set.");
-    let redis_key = gen_key();
-
     let backend = Backend::new(&redis_host);
 
     HttpServer::new(move || {
-        let session =
-            RedisSession::new(format!("{}:{}", redis_host.clone(), redis_port), &redis_key)
-                .ttl(1800)
-                .cookie_name("ff_session")
-                .cookie_max_age(None);
-
+	let web_dir = path::Path::new(env!("CARGO_MANIFEST_DIR")).join("web/dist");
+	
         App::new()
-            .wrap(session)
             .wrap(Logger::default())
             .data(backend.clone())
             .data(database_pool.clone())
-            .configure(web::init)
             .service(
                 scope("/api")
-                    .configure(auth::init)
-                    .configure(features::init),
+                    .configure(routes::permissions::init)
+                    .configure(routes::features::init)
+		    .configure(routes::users::init)
             )
+	    .service(Files::new("/", web_dir).index_file("index.html"))
     })
     .bind(format!("{}:{}", config.host, config.port))?
     .run()
