@@ -7,7 +7,7 @@ use actix_web::{
     web::{scope, Buf, Data, Json, Path},
     HttpResponse, Result,
 };
-use actix_web_grants::proc_macro::has_any_role;
+use actix_web_grants::proc_macro::{has_any_role};
 use actix_web_httpauth::middleware::HttpAuthentication;
 use futures::{StreamExt, TryStreamExt};
 use redis::{Commands, Connection};
@@ -18,6 +18,18 @@ use std::collections::HashMap;
 use crate::{Backend, validate_jwt, backends::redis::with_connection};
 
 type HttpResult = Result<HttpResponse>;
+
+pub fn init(cfg: &mut ServiceConfig) {
+    cfg.service(
+        scope("/features")
+	    .wrap(HttpAuthentication::bearer(validate_jwt))
+            .service(is_toggled)
+            .service(all_toggles)
+            .service(set_toggle)
+            .service(remove_toggle)
+            .service(import_toggles),
+    );
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct KV {
@@ -113,16 +125,4 @@ pub async fn import_toggles(mut payload: Multipart, data: Data<Backend>) -> Http
     }
 
     Ok(HttpResponse::Created().finish())
-}
-
-pub fn init(cfg: &mut ServiceConfig) {
-    cfg.service(
-        scope("/features")
-	    .wrap(HttpAuthentication::bearer(validate_jwt))
-            .service(is_toggled)
-            .service(all_toggles)
-            .service(set_toggle)
-            .service(remove_toggle)
-            .service(import_toggles),
-    );
 }

@@ -1,14 +1,12 @@
 #![feature(once_cell)]
 
-use actix_files::Files;
-use actix_web::{
-    dev::ServiceRequest, middleware::Logger, web::scope, App, HttpServer, Result as ActixResult,
-};
+use actix_files::{Files, NamedFile};
+use actix_web::{App, HttpRequest, HttpServer, Result as ActixResult, dev::ServiceRequest, middleware::Logger, web::{get, scope}};
 use actix_web_grants::permissions::AttachPermissions;
 use actix_web_httpauth::extractors::bearer::BearerAuth;
 use env_logger::Env;
+use std::{path::{Path, PathBuf}, env};
 use sqlx::PgPool;
-use std::{env, path};
 
 use backends::Backend;
 use config::Config;
@@ -25,6 +23,13 @@ pub async fn validate_jwt(req: ServiceRequest, credentials: BearerAuth) -> Actix
     req.attach(claims.permissions.iter().map(|p| p.to_string()).collect());
 
     Ok(req)
+}
+
+async fn index(_: HttpRequest) -> ActixResult<NamedFile> {    
+    let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("web/dist/index.html");
+    let file = NamedFile::open(path)?;
+    
+    Ok(file.use_last_modified(true))
 }
 
 #[actix_web::main]
@@ -44,7 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let backend = Backend::new(&redis_host);
 
     HttpServer::new(move || {
-	let web_dir = path::Path::new(env!("CARGO_MANIFEST_DIR")).join("web/dist");
+	let web_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("web/dist");
 	
         App::new()
             .wrap(Logger::default())
@@ -57,6 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		    .configure(routes::users::init)
             )
 	    .service(Files::new("/", web_dir).index_file("index.html"))
+            .default_service(get().to(index))
     })
     .bind(format!("{}:{}", config.host, config.port))?
     .run()

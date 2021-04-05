@@ -8,13 +8,9 @@ import "./index.css";
 export default function Header() {
   const history = useHistory();
 
-  async function handleLogout() {
-    try {
-      localStorage.removeItem("token");
-      await history.push("/");
-    } catch (e) {
-      console.log(e);
-    }
+  function handleLogout() {
+    localStorage.removeItem("token");
+    history.push("/login");
   }
 
   return (

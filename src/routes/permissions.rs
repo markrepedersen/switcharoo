@@ -9,7 +9,16 @@ pub struct PermissionRequest {
     pub name: String,
 }
 
-#[get("/permissions")]
+pub fn init(cfg: &mut ServiceConfig) {
+    cfg.service(
+        scope("/permissions")
+	    .wrap(HttpAuthentication::bearer(validate_jwt))
+	    .service(self::get_permissions)
+	    .service(self::add_permissions)
+	    .service(self::remove_permissions));
+}
+
+#[get("")]
 pub async fn get_permissions(data: Data<PgPool>) -> HttpResponse {
     match Permission::get_permissions(data.as_ref()).await {
         Ok(permissions) => HttpResponse::Ok().json(permissions),
@@ -17,7 +26,7 @@ pub async fn get_permissions(data: Data<PgPool>) -> HttpResponse {
     }
 }
 
-#[post("/permissions")]
+#[post("")]
 pub async fn add_permissions(
     permission: Json<PermissionRequest>,
     data: Data<PgPool>,
@@ -28,19 +37,10 @@ pub async fn add_permissions(
     }
 }
 
-#[delete("/permissions/{name}")]
+#[delete("/{name}")]
 pub async fn remove_permissions(Path(name): Path<String>, data: Data<PgPool>) -> HttpResponse {
     match Permission::remove_permission(name, data.as_ref()).await {
         Ok(_) => HttpResponse::Ok().finish(),
         Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }
-}
-
-pub fn init(cfg: &mut ServiceConfig) {
-    cfg.service(
-        scope("/permissions")
-	    .wrap(HttpAuthentication::bearer(validate_jwt))
-	    .service(self::get_permissions)
-	    .service(self::add_permissions)
-	    .service(self::remove_permissions));
 }

@@ -5,6 +5,13 @@ use sqlx::PgPool;
 use crate::auth::claim::{create_jwt, Claims};
 use crate::models::{permission::Permission, user::User};
 
+pub fn init(cfg: &mut ServiceConfig) {
+    cfg.service(
+        scope("/users")
+            .service(self::register)
+            .service(self::login));
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct LoginResponse {
     pub username: String,
@@ -48,11 +55,4 @@ pub async fn register(user: Json<UserRequest>, data: Data<PgPool>) -> impl Respo
         Ok(_) => HttpResponse::Ok().finish(),
         Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }
-}
-
-pub fn init(cfg: &mut ServiceConfig) {
-    cfg.service(
-        scope("/users")
-            .service(self::register)
-            .service(self::login));
 }
