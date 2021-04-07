@@ -2,109 +2,133 @@ use actix_multipart::Multipart;
 use actix_web::{
     delete,
     error::ErrorInternalServerError,
-    get, post,
+    get, post, put,
     web::ServiceConfig,
     web::{scope, Buf, Data, Json, Path},
     HttpResponse, Result,
 };
-use actix_web_grants::proc_macro::{has_any_role};
 use actix_web_httpauth::middleware::HttpAuthentication;
-use futures::{StreamExt, TryStreamExt};
-use redis::{Commands, Connection};
+use futures::{stream::StreamExt, TryStreamExt};
+use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::from_slice;
 use std::collections::HashMap;
 
-use crate::{Backend, validate_jwt, backends::redis::with_connection};
+use crate::{validate_jwt, Backend};
 
 type HttpResult = Result<HttpResponse>;
 
 pub fn init(cfg: &mut ServiceConfig) {
     cfg.service(
         scope("/features")
-	    .wrap(HttpAuthentication::bearer(validate_jwt))
-            .service(is_toggled)
+            .wrap(HttpAuthentication::bearer(validate_jwt))
+            .service(get_toggle)
             .service(all_toggles)
-            .service(set_toggle)
+            .service(update_toggle)
             .service(remove_toggle)
             .service(import_toggles),
     );
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct KV {
-    pub key: String,
+pub struct Feature {
+    pub id: String,
     pub value: bool,
 }
 
-impl KV {
+impl Feature {
     pub fn new(key: String, value: bool) -> Self {
-        Self { key, value }
+        Self { id: key, value }
+    }
+
+    pub fn normalize<T: Into<bool>>(val: T) -> String {
+        let b: bool = val.into();
+
+        if b {
+            "true".to_string()
+        } else {
+            "false".to_string()
+        }
     }
 }
 
 #[get("/{feature}")]
-#[has_any_role("Guest", "Admin", "Developer")]
-pub async fn is_toggled(Path(feature): Path<String>, data: Data<Backend>) -> HttpResult {
-    with_connection(&data, |conn: &mut Connection| -> HttpResult {
-        let val = conn
-            .get(&feature)
-            .map_err(|e| ErrorInternalServerError(e))?;
+pub async fn get_toggle(Path(feature): Path<String>, data: Data<Backend>) -> HttpResult {
+    Ok(match data.conn.lock() {
+        Ok(mut conn) => {
+            let val: String = conn
+                .get(&feature)
+                .await
+                .map_err(|e| ErrorInternalServerError(e))?;
 
-        Ok(HttpResponse::Ok().json(KV::new(feature, val)))
+            HttpResponse::Ok().json(Feature::new(feature, val.parse::<bool>().expect("Expected boolean String.")))
+        }
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    })
+}
+
+#[put("/{feature}")]
+pub async fn update_toggle(
+    Path(feature): Path<String>,
+    payload: Json<Feature>,
+    data: Data<Backend>,
+) -> HttpResult {
+    Ok(match data.conn.lock() {
+        Ok(mut conn) => {
+            conn
+                .set(&feature, Feature::normalize(payload.value))
+                .await
+                .map_err(|e| ErrorInternalServerError(e))?;
+
+            HttpResponse::Ok().json(feature)
+        }
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     })
 }
 
 #[delete("/{feature}")]
-#[has_any_role("Admin", "Developer")]
 pub async fn remove_toggle(Path(feature): Path<String>, data: Data<Backend>) -> HttpResult {
-    with_connection(&data, |conn: &mut Connection| -> HttpResult {
-        conn.del::<String, bool>(feature)
-            .map_err(|e| ErrorInternalServerError(e))?;
+    Ok(match data.conn.lock() {
+        Ok(mut conn) => {
+            conn
+                .del(&feature)
+                .await
+                .map_err(|e| ErrorInternalServerError(e))?;
 
-        Ok(HttpResponse::Ok().finish())
+            HttpResponse::Ok().json(feature)
+        }
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     })
 }
 
 #[get("")]
-#[has_any_role("Guest", "Admin", "Developer")]
 pub async fn all_toggles(data: Data<Backend>) -> HttpResult {
-    with_connection(&data, |conn: &mut Connection| -> HttpResult {
-        let keys: Vec<String> = conn
-            .scan::<String>()
-            .map_err(|e| ErrorInternalServerError(e))?
-            .collect();
+    Ok(match data.conn.lock() {
+        Ok(mut conn) => {
+            let mut iter = conn.scan().await.map_err(|e| ErrorInternalServerError(e))?;
+	    let mut pairs: Vec<Feature> = Vec::new();
+	    let mut keys = Vec::new();
 
-        if keys.is_empty() {
-            let values: Vec<String> = conn
-                .get(keys.clone())
-                .map_err(|e| ErrorInternalServerError(e))?;
-            let pairs: Vec<KV> = keys
-                .iter()
-                .enumerate()
-                .map(|(i, key)| KV::new(key.clone(), values[i].parse().unwrap_or(false)))
-                .collect();
+            while let Some(key) = iter.next_item().await {
+                keys.push(key);
+            }
 
-            Ok(HttpResponse::Ok().json(pairs))
-        } else {
-            Ok(HttpResponse::Ok().finish())
+            for key in keys {
+                let val: String = conn
+                    .get(&key)
+                    .await
+                    .map_err(|e| ErrorInternalServerError(e))?;
+
+                pairs.push(Feature::new(key, val.parse::<bool>().expect("Expected boolean String.")));
+            }
+
+            HttpResponse::Ok().json(pairs)
         }
-    })
-}
-
-#[post("")]
-#[has_any_role("Developer")]
-pub async fn set_toggle(payload: Json<KV>, data: Data<Backend>) -> HttpResult {
-    with_connection(&data, |conn: &mut Connection| -> HttpResult {
-        conn.set::<String, bool, ()>(payload.key.clone(), payload.value)
-            .map_err(|e| ErrorInternalServerError(e))?;
-
-        Ok(HttpResponse::Ok().finish())
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     })
 }
 
 #[post("/import")]
-#[has_any_role("Developer")]
 pub async fn import_toggles(mut payload: Multipart, data: Data<Backend>) -> HttpResult {
     let mut buf: Vec<u8> = Vec::new();
 
@@ -115,13 +139,11 @@ pub async fn import_toggles(mut payload: Multipart, data: Data<Backend>) -> Http
     }
 
     for (key, val) in from_slice::<HashMap<String, bool>>(&mut buf)? {
-        with_connection(
-            &data,
-            |conn: &mut Connection| -> Result<(), actix_web::Error> {
-                conn.set::<String, bool, ()>(key.clone(), val)
-                    .map_err(|e| ErrorInternalServerError(e))
-            },
-        )?;
+        if let Ok(mut conn) = data.conn.lock() {
+            conn.set::<String, String, ()>(key.clone(), Feature::normalize(val))
+                .await
+                .map_err(|e| ErrorInternalServerError(e))?;
+        }
     }
 
     Ok(HttpResponse::Created().finish())

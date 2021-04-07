@@ -1,7 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use sqlx::{query, query_as, PgPool};
-use uuid::Uuid;
+use sqlx::{query_as, PgPool};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Permission {
@@ -11,42 +10,42 @@ pub struct Permission {
 
 impl Permission {
     pub async fn get_permissions(pool: &PgPool) -> Result<Vec<Permission>> {
-        let permissions: Vec<Permission> = query_as!(Permission, "SELECT * FROM Permissions")
+        let permissions = query_as!(Permission, "SELECT * FROM Permissions")
             .fetch_all(pool)
             .await?;
 
         Ok(permissions)
     }
 
-    pub async fn add_permission(name: String, pool: &PgPool) -> Result<()> {
-        query!("INSERT INTO Permissions(name) VALUES ($1)", name)
-            .execute(pool)
+    pub async fn get_permission(id: i32, pool: &PgPool) -> Result<Permission> {
+        let permission = query_as!(Permission, "SELECT * FROM Permissions where id = $1", id)
+            .fetch_one(pool)
             .await?;
 
-        Ok(())
+        Ok(permission)
     }
 
-    pub async fn remove_permission(name: String, pool: &PgPool) -> Result<()> {
-        query!("DELETE FROM Permissions WHERE name = $1", name)
-            .execute(pool)
+    pub async fn add_permission(name: String, pool: &PgPool) -> Result<Permission> {
+        let permission = query_as!(Permission, "INSERT INTO Permissions(name) VALUES ($1) RETURNING *", name)
+            .fetch_one(pool)
             .await?;
 
-        Ok(())
+        Ok(permission)
     }
 
-    pub async fn get_permissions_for_user(id: Uuid, pool: &PgPool) -> Result<Vec<Permission>> {
-        let permissions = query_as!(
-            Permission,
-            "
-SELECT Permissions.id, Permissions.name 
-FROM UserPermissions INNER JOIN Permissions
-ON UserPermissions.permission_id = Permissions.id
-WHERE UserPermissions.user_id = $1",
-            id
-        )
-        .fetch_all(pool)
-        .await?;
+    pub async fn update_permission(id: i32, pool: &PgPool) -> Result<Permission> {
+        let permission = query_as!(Permission, "UPDATE Permissions SET id = $1 RETURNING *", id)
+            .fetch_one(pool)
+            .await?;
 
-        Ok(permissions)
+        Ok(permission)
+    }
+
+    pub async fn remove_permission(id: i32, pool: &PgPool) -> Result<Permission> {
+        let permission = query_as!(Permission, "DELETE FROM Permissions WHERE id = $1 RETURNING *", id)
+            .fetch_one(pool)
+            .await?;
+
+        Ok(permission)
     }
 }

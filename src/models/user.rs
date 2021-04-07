@@ -7,6 +7,8 @@ use uuid::Uuid;
 
 use crate::routes::users::UserRequest;
 
+use super::permission::Permission;
+
 #[derive(Serialize, Deserialize)]
 pub struct User {
     pub id: Uuid,
@@ -36,8 +38,8 @@ impl User {
             user.email,
             Self::hash_password(&user.password)?,
         )
-        .execute(pool)
-        .await?;
+            .execute(pool)
+            .await?;
 
         Ok(())
     }
@@ -100,8 +102,8 @@ impl User {
             Self::hash_password(&user.password)?,
             id,
         )
-        .execute(pool)
-        .await?;
+            .execute(pool)
+            .await?;
 
         Ok(())
     }
@@ -112,5 +114,21 @@ impl User {
             .await?;
 
         Ok(())
+    }
+
+    pub async fn get_user_permissions(id: Uuid, pool: &PgPool) -> Result<Vec<Permission>> {
+        let permissions = query_as!(
+            Permission,
+            "
+SELECT Permissions.id, Permissions.name 
+FROM UserPermissions INNER JOIN Permissions
+ON UserPermissions.permission_id = Permissions.id
+WHERE UserPermissions.user_id = $1",
+            id
+        )
+            .fetch_all(pool)
+            .await?;
+
+        Ok(permissions)
     }
 }

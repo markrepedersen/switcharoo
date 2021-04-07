@@ -1,5 +1,5 @@
 use crate::{models::permission::Permission, validate_jwt};
-use actix_web::{HttpResponse, delete, get, post, web::Json, web::Path, web::{Data, ServiceConfig, scope}};
+use actix_web::{HttpResponse, delete, get, put, post, web::Json, web::Path, web::{Data, ServiceConfig, scope}};
 use actix_web_httpauth::middleware::HttpAuthentication;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -13,6 +13,7 @@ pub fn init(cfg: &mut ServiceConfig) {
     cfg.service(
         scope("/permissions")
 	    .wrap(HttpAuthentication::bearer(validate_jwt))
+	    .service(self::get_permission)
 	    .service(self::get_permissions)
 	    .service(self::add_permissions)
 	    .service(self::remove_permissions));
@@ -32,15 +33,31 @@ pub async fn add_permissions(
     data: Data<PgPool>,
 ) -> HttpResponse {
     match Permission::add_permission(permission.name.clone(), data.as_ref()).await {
-        Ok(_) => HttpResponse::Ok().finish(),
+        Ok(permission) => HttpResponse::Ok().json(permission),
         Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }
 }
 
-#[delete("/{name}")]
-pub async fn remove_permissions(Path(name): Path<String>, data: Data<PgPool>) -> HttpResponse {
-    match Permission::remove_permission(name, data.as_ref()).await {
-        Ok(_) => HttpResponse::Ok().finish(),
+#[get("/{id}")]
+pub async fn get_permission(Path(id): Path<i32>, data: Data<PgPool>) -> HttpResponse {
+    match Permission::get_permission(id, data.as_ref()).await {
+        Ok(permission) => HttpResponse::Ok().json(permission),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }    
+}
+
+#[put("/{id}")]
+pub async fn update_permissions(Path(id): Path<i32>, data: Data<PgPool>) -> HttpResponse {
+    match Permission::update_permission(id, data.as_ref()).await {
+        Ok(permission) => HttpResponse::Ok().json(permission),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }    
+}
+
+#[delete("/{id}")]
+pub async fn remove_permissions(Path(id): Path<i32>, data: Data<PgPool>) -> HttpResponse {
+    match Permission::remove_permission(id, data.as_ref()).await {
+        Ok(permission) => HttpResponse::Ok().json(permission),
         Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }
 }
