@@ -37,7 +37,7 @@ export const dataProvider = {
 
 export const authProvider = {
   login: async ({username, password}) => {
-    const response = await axios.post(uri("users/login"), {
+    const response = await axios.post(uri("login"), {
       email: username,
       password,
     });

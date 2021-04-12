@@ -15,31 +15,29 @@ pub struct User {
     pub email: String,
     #[serde(skip_serializing)]
     pub password: String,
-}
-
-impl From<UserRequest> for User {
-    fn from(user: UserRequest) -> Self {
-        User {
-            id: Uuid::new_v4(),
-            email: user.email,
-            password: user.password,
-        }
-    }
+    #[serde(skip_serializing)]
+    pub tenant_id: Uuid,
 }
 
 #[allow(dead_code)]
 impl User {
-    pub async fn create(user: UserRequest, pool: &PgPool) -> Result<()> {
-        let user = Self::from(user);
+    pub async fn create(user: UserRequest, tenant_id: Uuid, pool: &PgPool) -> Result<()> {
+        let user = Self {
+            id: Uuid::new_v4(),
+            email: user.email,
+            password: Self::hash_password(&user.password)?,
+            tenant_id,
+        };
 
         query!(
-            "INSERT INTO Users (id, email, password) VALUES ($1, $2, $3)",
+            "INSERT INTO Users (id, email, password, tenant_id) VALUES ($1, $2, $3, $4)",
             user.id,
             user.email,
-            Self::hash_password(&user.password)?,
+            user.password,
+            user.tenant_id,
         )
-            .execute(pool)
-            .await?;
+        .execute(pool)
+        .await?;
 
         Ok(())
     }
@@ -52,29 +50,14 @@ impl User {
         Ok(db_user)
     }
 
-    pub fn hash_password(password: &String) -> Result<String> {
-        let salt: [u8; 32] = thread_rng().gen();
-        let mut config = argon2::Config::default();
-
-        config.lanes = 4;
-        config.thread_mode = ThreadMode::Parallel;
-        config.hash_length = 32;
-
-        let hashpass = argon2::hash_encoded(password.as_bytes(), &salt, &config)?;
-
-        Ok(hashpass)
-    }
-
-    pub fn verify_password(&self, password: &String) -> Result<bool> {
-        let is_valid = argon2::verify_encoded(&self.password, password.as_bytes())?;
-
-        Ok(is_valid)
-    }
-
-    pub async fn find_all(pool: &PgPool) -> Result<Vec<User>> {
-        let users: Vec<User> = query_as!(User, "SELECT * FROM Users ORDER BY id")
-            .fetch_all(pool)
-            .await?;
+    pub async fn find_all(tenant_id: Uuid, pool: &PgPool) -> Result<Vec<User>> {
+        let users: Vec<User> = query_as!(
+            User,
+            "SELECT * FROM Users WHERE tenant_id = $1 ORDER BY id",
+            tenant_id
+        )
+        .fetch_all(pool)
+        .await?;
 
         Ok(users)
     }
@@ -102,8 +85,8 @@ impl User {
             Self::hash_password(&user.password)?,
             id,
         )
-            .execute(pool)
-            .await?;
+        .execute(pool)
+        .await?;
 
         Ok(())
     }
@@ -126,9 +109,28 @@ ON UserPermissions.permission_id = Permissions.id
 WHERE UserPermissions.user_id = $1",
             id
         )
-            .fetch_all(pool)
-            .await?;
+        .fetch_all(pool)
+        .await?;
 
         Ok(permissions)
+    }
+
+    fn hash_password(password: &String) -> Result<String> {
+        let salt: [u8; 32] = thread_rng().gen();
+        let mut config = argon2::Config::default();
+
+        config.lanes = 4;
+        config.thread_mode = ThreadMode::Parallel;
+        config.hash_length = 32;
+
+        let hashpass = argon2::hash_encoded(password.as_bytes(), &salt, &config)?;
+
+        Ok(hashpass)
+    }
+
+    fn verify_password(&self, password: &String) -> Result<bool> {
+        let is_valid = argon2::verify_encoded(&self.password, password.as_bytes())?;
+
+        Ok(is_valid)
     }
 }

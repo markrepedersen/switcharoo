@@ -2,9 +2,14 @@ version: "3.8"
 
 services:
   switcharoo:
-    build: .
+    build:
+      context: .
+      target: $ENV
     ports:
       - 8080:8080
+    environment:
+      REDIS_HOST: redis
+      DATABASE_URL: postgres://admin:admin@db/authdb
   redis:
     image: redis:6.2.1-alpine3.13
     restart: always

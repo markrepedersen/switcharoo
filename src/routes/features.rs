@@ -1,150 +1,121 @@
-use actix_multipart::Multipart;
 use actix_web::{
+    post,
     delete,
     error::ErrorInternalServerError,
-    get, post, put,
+    get, put,
     web::ServiceConfig,
-    web::{scope, Buf, Data, Json, Path},
+    web::{scope, Data, Json, Path},
     HttpResponse, Result,
 };
-use actix_web_httpauth::middleware::HttpAuthentication;
-use futures::{stream::StreamExt, TryStreamExt};
-use redis::AsyncCommands;
+use actix_web_httpauth::{extractors::bearer::BearerAuth, middleware::HttpAuthentication};
+use auth::claim::decode_jwt;
 use serde::{Deserialize, Serialize};
-use serde_json::from_slice;
-use std::collections::HashMap;
 
-use crate::{validate_jwt, Backend};
+use crate::{auth, backends::RedisBackend, validate_jwt};
 
 type HttpResult = Result<HttpResponse>;
+
+#[derive(Serialize, Deserialize)]
+pub struct FeatureFlag {
+    #[serde(rename(serialize = "id", deserialize = "id"))]
+    pub key: String,
+    pub value: bool,
+}
+
+impl FeatureFlag {
+    pub fn new(key: String, value: bool) -> Self {
+        Self { key, value }
+    }
+}
 
 pub fn init(cfg: &mut ServiceConfig) {
     cfg.service(
         scope("/features")
             .wrap(HttpAuthentication::bearer(validate_jwt))
-            .service(get_toggle)
-            .service(all_toggles)
-            .service(update_toggle)
-            .service(remove_toggle)
-            .service(import_toggles),
+            .service(get_flag)
+            .service(update_flag)
+            .service(remove_flag)
+            .service(all_flags)
+            .service(add_flag),
     );
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Feature {
-    pub id: String,
-    pub value: bool,
+#[get("/{key}")]
+pub async fn get_flag(key: Path<String>, data: Data<RedisBackend>, auth: BearerAuth) -> HttpResult {
+    let key = key.into_inner();
+    let claims = decode_jwt(auth.token())?;
+    let tenant_id = claims.tenant_id;
+    let val = data
+        .get_flag(key.clone(), tenant_id)
+        .await
+        .map_err(|e| ErrorInternalServerError(e))?;
+
+    Ok(HttpResponse::Ok().json(FeatureFlag::new(key, val)))
 }
 
-impl Feature {
-    pub fn new(key: String, value: bool) -> Self {
-        Self { id: key, value }
-    }
 
-    pub fn normalize<T: Into<bool>>(val: T) -> String {
-        let b: bool = val.into();
-
-        if b {
-            "true".to_string()
-        } else {
-            "false".to_string()
-        }
-    }
-}
-
-#[get("/{feature}")]
-pub async fn get_toggle(Path(feature): Path<String>, data: Data<Backend>) -> HttpResult {
-    Ok(match data.conn.lock() {
-        Ok(mut conn) => {
-            let val: String = conn
-                .get(&feature)
-                .await
-                .map_err(|e| ErrorInternalServerError(e))?;
-
-            HttpResponse::Ok().json(Feature::new(feature, val.parse::<bool>().expect("Expected boolean String.")))
-        }
-        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
-    })
-}
-
-#[put("/{feature}")]
-pub async fn update_toggle(
-    Path(feature): Path<String>,
-    payload: Json<Feature>,
-    data: Data<Backend>,
+#[put("/{key}")]
+pub async fn update_flag(
+    key: Path<String>,
+    payload: Json<FeatureFlag>,
+    data: Data<RedisBackend>,
+    auth: BearerAuth,
 ) -> HttpResult {
-    Ok(match data.conn.lock() {
-        Ok(mut conn) => {
-            conn
-                .set(&feature, Feature::normalize(payload.value))
-                .await
-                .map_err(|e| ErrorInternalServerError(e))?;
+    let key = key.into_inner();
+    let claims = decode_jwt(auth.token())?;
+    let tenant_id = claims.tenant_id;
 
-            HttpResponse::Ok().json(feature)
-        }
-        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
-    })
+    data.add_or_update_flag(payload.key.clone(), payload.value, tenant_id)
+        .await
+        .map_err(|e| ErrorInternalServerError(e))?;
+
+    Ok(HttpResponse::Ok().json(FeatureFlag::new(key, payload.value)))
 }
 
-#[delete("/{feature}")]
-pub async fn remove_toggle(Path(feature): Path<String>, data: Data<Backend>) -> HttpResult {
-    Ok(match data.conn.lock() {
-        Ok(mut conn) => {
-            conn
-                .del(&feature)
-                .await
-                .map_err(|e| ErrorInternalServerError(e))?;
+#[delete("/{key}")]
+pub async fn remove_flag(
+    key: Path<String>,
+    data: Data<RedisBackend>,
+    auth: BearerAuth,
+) -> HttpResult {
+    let key = key.into_inner();
+    let claims = decode_jwt(auth.token())?;
+    let tenant_id = claims.tenant_id;
 
-            HttpResponse::Ok().json(feature)
-        }
-        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
-    })
+    data.remove_flag(key.clone(), tenant_id)
+        .await
+        .map_err(|e| ErrorInternalServerError(e))?;
+
+    Ok(HttpResponse::Ok().json(FeatureFlag::new(key, false)))
 }
 
 #[get("")]
-pub async fn all_toggles(data: Data<Backend>) -> HttpResult {
-    Ok(match data.conn.lock() {
-        Ok(mut conn) => {
-            let mut iter = conn.scan().await.map_err(|e| ErrorInternalServerError(e))?;
-	    let mut pairs: Vec<Feature> = Vec::new();
-	    let mut keys = Vec::new();
+pub async fn all_flags(data: Data<RedisBackend>, auth: BearerAuth) -> HttpResult {
+    let claims = decode_jwt(auth.token())?;
+    let tenant_id = claims.tenant_id;
+    let flags: Vec<FeatureFlag> = data
+        .get_all_flags(tenant_id)
+        .await
+        .map_err(|e| ErrorInternalServerError(e))?
+        .iter()
+        .map(|(key, val)| FeatureFlag::new(key.clone(), val.clone()))
+        .collect();
 
-            while let Some(key) = iter.next_item().await {
-                keys.push(key);
-            }
-
-            for key in keys {
-                let val: String = conn
-                    .get(&key)
-                    .await
-                    .map_err(|e| ErrorInternalServerError(e))?;
-
-                pairs.push(Feature::new(key, val.parse::<bool>().expect("Expected boolean String.")));
-            }
-
-            HttpResponse::Ok().json(pairs)
-        }
-        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
-    })
+    Ok(HttpResponse::Ok().json(flags))
 }
 
-#[post("/import")]
-pub async fn import_toggles(mut payload: Multipart, data: Data<Backend>) -> HttpResult {
-    let mut buf: Vec<u8> = Vec::new();
+#[post("")]
+pub async fn add_flag(
+    payload: Json<FeatureFlag>,
+    data: Data<RedisBackend>,
+    auth: BearerAuth,
+) -> HttpResult {
+    let claims = decode_jwt(auth.token())?;
+    let tenant_id = claims.tenant_id;
 
-    while let Some(mut field) = payload.try_next().await? {
-        while let Some(chunk) = field.next().await {
-            buf.extend_from_slice(chunk?.bytes());
-        }
-    }
+    data.add_or_update_flag(payload.key.clone(), payload.value, tenant_id)
+        .await
+        .map_err(|e| ErrorInternalServerError(e))?;
 
-    for (key, val) in from_slice::<HashMap<String, bool>>(&mut buf)? {
-        if let Ok(mut conn) = data.conn.lock() {
-            conn.set::<String, String, ()>(key.clone(), Feature::normalize(val))
-                .await
-                .map_err(|e| ErrorInternalServerError(e))?;
-        }
-    }
-
-    Ok(HttpResponse::Created().finish())
+    Ok(HttpResponse::Ok().json(FeatureFlag::new(payload.key.clone(), payload.value)))
 }
