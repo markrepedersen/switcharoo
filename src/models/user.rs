@@ -21,25 +21,19 @@ pub struct User {
 
 #[allow(dead_code)]
 impl User {
-    pub async fn create(user: UserRequest, tenant_id: Uuid, pool: &PgPool) -> Result<()> {
-        let user = Self {
-            id: Uuid::new_v4(),
-            email: user.email,
-            password: Self::hash_password(&user.password)?,
-            tenant_id,
-        };
-
-        query!(
-            "INSERT INTO Users (id, email, password, tenant_id) VALUES ($1, $2, $3, $4)",
-            user.id,
+    pub async fn create(user: UserRequest, tenant_id: Uuid, pool: &PgPool) -> Result<User> {
+        let user = query_as!(
+	    User,
+            "INSERT INTO Users (id, email, password, tenant_id) VALUES ($1, $2, $3, $4) RETURNING *",
+            Uuid::new_v4(),
             user.email,
-            user.password,
-            user.tenant_id,
+            Self::hash_password(&user.password)?,
+            tenant_id,
         )
-        .execute(pool)
+        .fetch_one(pool)
         .await?;
 
-        Ok(())
+        Ok(user)
     }
 
     pub async fn is_signed_in(user: &UserRequest, pool: &PgPool) -> Result<User> {
