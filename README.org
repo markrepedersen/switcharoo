@@ -10,7 +10,14 @@ User information, including tenant ID, is stored in a Postgres database. Each te
 Everything is Dockerized, so you can run the following command to spin the application up quickly:
 
 #+begin_src bash
-docker-compose up
+  # To only spin up Redis and Postgres services
+  docker-compose up -d redis db
+
+  # Run local webserver
+  cargo run
+
+  # Run all services, web UI on :8080
+  docker-compose up
 #+end_src
 
 # Clients
