@@ -2,13 +2,10 @@
 
 use actix_files::{Files, NamedFile};
 use actix_web::{
-    App,
-    HttpRequest,
-    HttpServer,
-    Result as ActixResult,
     dev::ServiceRequest,
     middleware::Logger,
-    web::{get, scope}
+    web::{get, scope},
+    App, HttpRequest, HttpServer, Result as ActixResult,
 };
 use actix_web_httpauth::extractors::bearer::BearerAuth;
 use auth::claim::decode_jwt;
@@ -57,8 +54,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         App::new()
             .wrap(Logger::default())
-	    .data(backend.clone())
-	    .data(database_pool.clone())
+            .data(backend.clone())
+            .data(database_pool.clone())
             .service(
                 scope("/api")
                     .configure(routes::auth::init)

@@ -4,10 +4,11 @@ use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use std::lazy::SyncLazy;
+use uuid::Uuid;
 
-static JWT_EXPIRATION_NUM_HOURS: i64 = 24;
+pub static JWT_DEFAULT_EXPIRATION: i64 = 24;
+
 static SECRET: SyncLazy<[u8; 32]> = SyncLazy::new(|| thread_rng().gen::<[u8; 32]>());
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -15,16 +16,25 @@ pub struct Claims {
     pub username: String,
     pub tenant_id: Uuid,
     pub permissions: Vec<String>,
-    exp: i64,
+    pub exp: i64,
 }
 
 impl Claims {
-    pub fn new(username: String, tenant_id: Uuid, permissions: Vec<String>) -> Self {
+    /// Create a new Claim that can be retrieved from decoding a JWT.
+    /// # username
+    /// The username of the user
+    /// # exp
+    /// The expiry time for the JWT in seconds
+    /// # tenant_id
+    /// The user's tenant id
+    /// # permissions
+    /// The user's permissions
+    pub fn new(username: String, exp: i64, tenant_id: Uuid, permissions: Vec<String>) -> Self {
         Self {
             username,
             tenant_id,
             permissions,
-            exp: (Utc::now() + Duration::hours(JWT_EXPIRATION_NUM_HOURS)).timestamp(),
+            exp: (Utc::now() + Duration::hours(exp)).timestamp(),
         }
     }
 }

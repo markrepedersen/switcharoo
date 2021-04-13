@@ -3,6 +3,14 @@ use serde::{Deserialize, Serialize};
 use sqlx::{query_as, PgPool};
 
 #[derive(Serialize, Deserialize, Clone)]
+pub enum PermissionType {
+    Read,
+    Add,
+    Remove,
+    Update,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Permission {
     pub id: i32,
     pub name: String,
@@ -26,9 +34,13 @@ impl Permission {
     }
 
     pub async fn add_permission(name: String, pool: &PgPool) -> Result<Permission> {
-        let permission = query_as!(Permission, "INSERT INTO Permissions(name) VALUES ($1) RETURNING *", name)
-            .fetch_one(pool)
-            .await?;
+        let permission = query_as!(
+            Permission,
+            "INSERT INTO Permissions(name) VALUES ($1) RETURNING *",
+            name
+        )
+        .fetch_one(pool)
+        .await?;
 
         Ok(permission)
     }
@@ -42,9 +54,13 @@ impl Permission {
     }
 
     pub async fn remove_permission(id: i32, pool: &PgPool) -> Result<Permission> {
-        let permission = query_as!(Permission, "DELETE FROM Permissions WHERE id = $1 RETURNING *", id)
-            .fetch_one(pool)
-            .await?;
+        let permission = query_as!(
+            Permission,
+            "DELETE FROM Permissions WHERE id = $1 RETURNING *",
+            id
+        )
+        .fetch_one(pool)
+        .await?;
 
         Ok(permission)
     }
