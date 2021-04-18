@@ -1,4 +1,4 @@
-use crate::{models::permission::Permission, validate_jwt};
+use crate::models::permission::Permission;
 use actix_web::{
     delete, get, post, put,
     web::Json,
@@ -9,6 +9,8 @@ use actix_web::{
 use actix_web_httpauth::middleware::HttpAuthentication;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+
+use super::auth::validate_jwt;
 
 #[derive(Serialize, Deserialize)]
 pub struct PermissionRequest {

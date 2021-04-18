@@ -1,8 +1,7 @@
 use actix_web::{
-    post,
     delete,
     error::ErrorInternalServerError,
-    get, put,
+    get, post, put,
     web::ServiceConfig,
     web::{scope, Data, Json, Path},
     HttpResponse, Result,
@@ -11,7 +10,9 @@ use actix_web_httpauth::{extractors::bearer::BearerAuth, middleware::HttpAuthent
 use auth::claim::decode_jwt;
 use serde::{Deserialize, Serialize};
 
-use crate::{auth, backends::RedisBackend, validate_jwt};
+use crate::{auth, backends::RedisBackend};
+
+use super::auth::validate_jwt;
 
 type HttpResult = Result<HttpResponse>;
 
@@ -52,7 +53,6 @@ pub async fn get_flag(key: Path<String>, data: Data<RedisBackend>, auth: BearerA
 
     Ok(HttpResponse::Ok().json(FeatureFlag::new(key, val)))
 }
-
 
 #[put("/{key}")]
 pub async fn update_flag(

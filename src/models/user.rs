@@ -36,12 +36,13 @@ impl User {
         Ok(user)
     }
 
-    pub async fn is_signed_in(user: &UserRequest, pool: &PgPool) -> Result<User> {
+    pub async fn exists(user: &UserRequest, pool: &PgPool) -> Result<Option<User>> {
         let db_user = User::find_by_email(&user.email, pool).await?;
 
-        db_user.verify_password(&user.password)?;
-
-        Ok(db_user)
+        Ok(match db_user.verify_password(&user.password)? {
+            true => Some(db_user),
+            false => None,
+        })
     }
 
     pub async fn find_all(tenant_id: Uuid, pool: &PgPool) -> Result<Vec<User>> {

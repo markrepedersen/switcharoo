@@ -9,13 +9,15 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::{auth::claim::decode_jwt, validate_jwt};
+use super::auth::validate_jwt;
+
+use crate::auth::claim::decode_jwt;
 use crate::models::user::User;
 
 pub fn init(cfg: &mut ServiceConfig) {
     cfg.service(
         scope("/users")
-	    .wrap(HttpAuthentication::bearer(validate_jwt))
+            .wrap(HttpAuthentication::bearer(validate_jwt))
             .service(self::get_users)
             .service(self::get_user)
             .service(self::add_user)

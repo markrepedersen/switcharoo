@@ -1,16 +1,16 @@
+use actix_web::{dev::ServiceRequest, Result as ActixResult};
 use actix_web::{
     error::{ErrorBadRequest, ErrorInternalServerError, ErrorUnauthorized},
     get, post,
-    web::Data,
-    web::Json,
-    web::ServiceConfig,
-    HttpResponse, Result as ActixResult,
+    web::{Data, Json, ServiceConfig},
+    HttpResponse,
 };
+use actix_web_httpauth::extractors::bearer::BearerAuth;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::auth::claim::{create_jwt, Claims, JWT_DEFAULT_EXPIRATION};
+use crate::auth::claim::{create_jwt, decode_jwt, Claims, JWT_DEFAULT_EXPIRATION};
 use crate::models::user::User;
 use crate::routes::users::UserRequest;
 
@@ -31,6 +31,12 @@ pub fn init(cfg: &mut ServiceConfig) {
     cfg.service(login)
         .service(register)
         .service(get_access_token);
+}
+
+pub async fn validate_jwt(req: ServiceRequest, auth: BearerAuth) -> ActixResult<ServiceRequest> {
+    decode_jwt(auth.token())?;
+
+    Ok(req)
 }
 
 #[get("/access_token")]
@@ -63,29 +69,33 @@ pub async fn register(user: Json<UserRequest>, data: Data<PgPool>) -> ActixResul
 }
 
 async fn issue_token(config: &AccessTokenRequest, data: &PgPool) -> ActixResult<HttpResponse> {
-    let user = User::is_signed_in(&config.user, data)
+    let user = User::exists(&config.user, data)
         .await
         .map_err(|e| ErrorUnauthorized(e))?;
 
-    let permissions: Vec<String> = User::get_user_permissions(user.id, data)
-        .await
-        .map_err(|e| ErrorInternalServerError(e))?
-        .iter()
-        .map(|p| p.name.clone())
-        .collect();
+    if let Some(user) = user {
+        let permissions: Vec<String> = User::get_user_permissions(user.id, data)
+            .await
+            .map_err(|e| ErrorInternalServerError(e))?
+            .iter()
+            .map(|p| p.name.clone())
+            .collect();
 
-    let claims = Claims::new(
-        config.user.email.clone(),
-        config.expiry,
-        user.tenant_id,
-        permissions.clone(),
-    );
+        let claims = Claims::new(
+            config.user.email.clone(),
+            config.expiry,
+            user.tenant_id,
+            permissions.clone(),
+        );
 
-    let token = create_jwt(claims).map_err(|e| ErrorBadRequest(e))?;
+        let token = create_jwt(claims).map_err(|e| ErrorBadRequest(e))?;
 
-    Ok(HttpResponse::Ok().json(AccessTokenResponse {
-        token,
-        permissions,
-        expiry: config.expiry,
-    }))
+        Ok(HttpResponse::Ok().json(AccessTokenResponse {
+            token,
+            permissions,
+            expiry: config.expiry,
+        }))
+    } else {
+        Ok(HttpResponse::Unauthorized().body("Invalid credentials."))
+    }
 }
